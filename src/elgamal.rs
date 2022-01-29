@@ -131,7 +131,9 @@ impl ElgamalCipher {
 
     /// Perform the decryption with the provided secret.
     pub fn decrypt(&self, secret: &JubJubScalar) -> JubJubExtended {
-        self.delta - self.gamma * secret
+        let mut ext = self.delta - self.gamma * secret;
+        ext.normalize();
+        ext
     }
 }
 

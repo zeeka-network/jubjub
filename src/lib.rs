@@ -237,13 +237,15 @@ impl Neg for JubJubExtended {
     /// is made without loss of generality.
     #[inline]
     fn neg(self) -> JubJubExtended {
-        JubJubExtended {
+        let mut ext = JubJubExtended {
             x: -self.x,
             y: self.y,
             z: self.z,
             t1: -self.t1,
             t2: self.t2,
-        }
+        };
+        ext.normalize();
+        ext
     }
 }
 
@@ -251,13 +253,15 @@ impl From<JubJubAffine> for JubJubExtended {
     /// Constructs an extended point (with `Z = 1`) from
     /// an affine point using the map `(x, y) => (x, y, 1, x, y)`.
     fn from(affine: JubJubAffine) -> JubJubExtended {
-        JubJubExtended {
+        let mut ext = JubJubExtended {
             x: affine.x,
             y: affine.y,
             z: BlsScalar::one(),
             t1: affine.x,
             t2: affine.y,
-        }
+        };
+        ext.normalize();
+        ext
     }
 }
 
@@ -329,13 +333,17 @@ impl AffineNielsPoint {
             acc += AffineNielsPoint::conditional_select(&zero, &self, bit);
         }
 
+        let mut ext = acc;
+        ext.normalize();
         acc
     }
 
     /// Multiplies this point by the specific little-endian bit pattern in the
     /// given byte array, ignoring the highest four bits.
     pub fn multiply_bits(&self, by: &[u8; 32]) -> JubJubExtended {
-        self.multiply(by)
+        let mut ext = self.multiply(by);
+        ext.normalize();
+        ext
     }
 }
 
@@ -343,7 +351,9 @@ impl<'a, 'b> Mul<&'b Fr> for &'a AffineNielsPoint {
     type Output = JubJubExtended;
 
     fn mul(self, other: &'b Fr) -> JubJubExtended {
-        self.multiply(&other.to_bytes())
+        let mut ext = self.multiply(&other.to_bytes());
+        ext.normalize();
+        ext
     }
 }
 
@@ -431,13 +441,17 @@ impl ExtendedNielsPoint {
             acc += ExtendedNielsPoint::conditional_select(&zero, &self, bit);
         }
 
-        acc
+        let mut ext = acc;
+        ext.normalize();
+        ext
     }
 
     /// Multiplies this point by the specific little-endian bit pattern in the
     /// given byte array, ignoring the highest four bits.
     pub fn multiply_bits(&self, by: &[u8; 32]) -> JubJubExtended {
-        self.multiply(by)
+        let mut ext = self.multiply(by);
+        ext.normalize();
+        ext
     }
 }
 
@@ -445,7 +459,9 @@ impl<'a, 'b> Mul<&'b Fr> for &'a ExtendedNielsPoint {
     type Output = JubJubExtended;
 
     fn mul(self, other: &'b Fr) -> JubJubExtended {
-        self.multiply(&other.to_bytes())
+        let mut ext = self.multiply(&other.to_bytes());
+        ext.normalize();
+        ext
     }
 }
 
@@ -549,7 +565,9 @@ impl JubJubAffine {
     /// Multiplies this point by the cofactor, producing an
     /// `JubJubExtended`
     pub fn mul_by_cofactor(&self) -> JubJubExtended {
-        JubJubExtended::from(*self).mul_by_cofactor()
+        let mut ext = JubJubExtended::from(*self).mul_by_cofactor();
+        ext.normalize();
+        ext
     }
 
     /// Determines if this point is of small order.
@@ -639,6 +657,20 @@ impl JubJubExtended {
         self.t2
     }
 
+    /// Normalizes the extended representation to always have `z` == 1.
+    pub fn normalize(&mut self) {
+        // Z coordinate is always nonzero, so this is
+        // its inverse.
+        let zinv = self.z.invert().unwrap();
+
+        let x = self.x * zinv;
+        let y = self.y * zinv;
+
+        *self = JubJubExtended {
+            x, y, z: BlsScalar::one(), t1: x, t2: y,
+        };
+    }
+
     /// Constructs an extended point from the neutral element `(0, 1)`.
     pub const fn identity() -> Self {
         JubJubExtended {
@@ -683,7 +715,9 @@ impl JubJubExtended {
 
     /// Multiplies this element by the cofactor `8`.
     pub fn mul_by_cofactor(&self) -> JubJubExtended {
-        self.double().double().double()
+        let mut ext = self.double().double().double();
+        ext.normalize();
+        ext
     }
 
     /// Performs a pre-processing step that produces an `ExtendedNielsPoint`
@@ -795,13 +829,15 @@ impl JubJubExtended {
 
         // The remaining arithmetic is exactly the process of converting
         // from a completed point to an extended point.
-        CompletedPoint {
+        let mut ext = CompletedPoint {
             x: &xy2 - &yy_plus_xx,
             y: yy_plus_xx,
             z: yy_minus_xx,
             t: &zz2 - &yy_minus_xx,
         }
-        .into_extended()
+        .into_extended();
+        ext.normalize();
+        ext
     }
 
     #[inline]
@@ -826,7 +862,9 @@ impl<'a, 'b> Mul<&'b Fr> for &'a JubJubExtended {
     type Output = JubJubExtended;
 
     fn mul(self, other: &'b Fr) -> JubJubExtended {
-        self.multiply(&other.to_bytes())
+        let mut ext = self.multiply(&other.to_bytes());
+        ext.normalize();
+        ext
     }
 }
 
@@ -861,13 +899,15 @@ impl<'a, 'b> Add<&'b ExtendedNielsPoint> for &'a JubJubExtended {
 
         // The remaining arithmetic is exactly the process of converting
         // from a completed point to an extended point.
-        CompletedPoint {
+        let mut ext = CompletedPoint {
             x: &b - &a,
             y: &b + &a,
             z: &d + &c,
             t: &d - &c,
         }
-        .into_extended()
+        .into_extended();
+        ext.normalize();
+        ext
     }
 }
 
@@ -881,13 +921,15 @@ impl<'a, 'b> Sub<&'b ExtendedNielsPoint> for &'a JubJubExtended {
         let c = &self.t1 * &self.t2 * &other.t2d;
         let d = (&self.z * &other.z).double();
 
-        CompletedPoint {
+        let mut ext = CompletedPoint {
             x: &b - &a,
             y: &b + &a,
             z: &d - &c,
             t: &d + &c,
         }
-        .into_extended()
+        .into_extended();
+        ext.normalize();
+        ext
     }
 }
 
@@ -909,13 +951,15 @@ impl<'a, 'b> Add<&'b AffineNielsPoint> for &'a JubJubExtended {
 
         // The remaining arithmetic is exactly the process of converting
         // from a completed point to an extended point.
-        CompletedPoint {
+        let mut ext = CompletedPoint {
             x: &b - &a,
             y: &b + &a,
             z: &d + &c,
             t: &d - &c,
         }
-        .into_extended()
+        .into_extended();
+        ext.normalize();
+        ext
     }
 }
 
@@ -929,13 +973,15 @@ impl<'a, 'b> Sub<&'b AffineNielsPoint> for &'a JubJubExtended {
         let c = &self.t1 * &self.t2 * &other.t2d;
         let d = self.z.double();
 
-        CompletedPoint {
+        let mut ext = CompletedPoint {
             x: &b - &a,
             y: &b + &a,
             z: &d - &c,
             t: &d + &c,
         }
-        .into_extended()
+        .into_extended();
+        ext.normalize();
+        ext
     }
 }
 
@@ -946,7 +992,9 @@ impl<'a, 'b> Add<&'b JubJubExtended> for &'a JubJubExtended {
 
     #[inline]
     fn add(self, other: &'b JubJubExtended) -> JubJubExtended {
-        self + other.to_niels()
+        let mut ext = self + other.to_niels();
+        ext.normalize();
+        ext
     }
 }
 
@@ -955,7 +1003,9 @@ impl<'a, 'b> Sub<&'b JubJubExtended> for &'a JubJubExtended {
 
     #[inline]
     fn sub(self, other: &'b JubJubExtended) -> JubJubExtended {
-        self - other.to_niels()
+        let mut ext = self - other.to_niels();
+        ext.normalize();
+        ext
     }
 }
 
@@ -966,7 +1016,9 @@ impl<'a, 'b> Add<&'b JubJubAffine> for &'a JubJubExtended {
 
     #[inline]
     fn add(self, other: &'b JubJubAffine) -> JubJubExtended {
-        self + other.to_niels()
+        let mut ext = self + other.to_niels();
+        ext.normalize();
+        ext
     }
 }
 
@@ -975,7 +1027,9 @@ impl<'a, 'b> Sub<&'b JubJubAffine> for &'a JubJubExtended {
 
     #[inline]
     fn sub(self, other: &'b JubJubAffine) -> JubJubExtended {
-        self - other.to_niels()
+        let mut ext = self - other.to_niels();
+        ext.normalize();
+        ext
     }
 }
 
@@ -1002,13 +1056,15 @@ impl CompletedPoint {
     /// T1 = x, T2 = y, without loss of generality.
     #[inline]
     fn into_extended(self) -> JubJubExtended {
-        JubJubExtended {
+        let mut ext = JubJubExtended {
             x: &self.x * &self.t,
             y: &self.y * &self.z,
             z: &self.z * &self.t,
             t1: self.x,
             t2: self.y,
-        }
+        };
+        ext.normalize();
+        ext
     }
 }
 
